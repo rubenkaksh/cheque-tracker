@@ -17,9 +17,36 @@ export interface Cheque {
   version: number
 }
 
+export type BankKind = 'bank' | 'saccos'
+
 export interface Bank {
   id: string
   name: string
+  kind?: BankKind | null
+  active?: boolean
+}
+
+export interface Party {
+  id: string
+  name: string
+  phone?: string | null
+  address?: string | null
+}
+
+export interface NewBank {
+  name: string
+  kind: BankKind
+}
+
+export interface NewParty {
+  name: string
+  phone?: string
+  address?: string
+}
+
+/** Same normalisation as parties.name_norm: trim, collapse whitespace, lowercase. */
+export function normaliseName(s: string): string {
+  return s.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
 export interface Agent {
@@ -43,8 +70,14 @@ export interface ChequeRepo {
   listCheques(): Promise<Cheque[]>
   addCheque(input: NewCheque): Promise<void>
   transitionCheque(id: string, toStatus: ChequeStatus, version: number): Promise<void>
-  listBanks(): Promise<Bank[]>
+  /** Active banks only, unless includeInactive is true. */
+  listBanks(includeInactive?: boolean): Promise<Bank[]>
   listAgents(): Promise<Agent[]>
+  listParties(): Promise<Party[]>
+  addBank(input: NewBank): Promise<void>
+  setBankActive(id: string, active: boolean): Promise<void>
+  /** Throws on a duplicate (normalised) name; returns the new party id. */
+  addParty(input: NewParty): Promise<string>
 }
 
 export function addDays(iso: string, days: number): string {
@@ -132,14 +165,54 @@ export const supabaseRepo: ChequeRepo = {
     if (error) fail(error)
   },
 
-  async listBanks() {
-    const { data, error } = await getSupabase()
-      .from('banks')
-      .select('id, name')
-      .eq('active', true)
-      .order('name')
+  async listBanks(includeInactive = false) {
+    let q = getSupabase().from('banks').select('id, name, kind, active').order('name')
+    if (!includeInactive) q = q.eq('active', true)
+    const { data, error } = await q
     if (error) fail(error)
     return (data ?? []) as Bank[]
+  },
+
+  async listParties() {
+    const { data, error } = await getSupabase()
+      .from('parties')
+      .select('id, name, phone, address')
+      .order('name')
+    if (error) fail(error)
+    return (data ?? []) as Party[]
+  },
+
+  async addBank(input) {
+    const name = input.name.trim()
+    const existing = await this.listBanks(true)
+    if (existing.some((b) => normaliseName(b.name) === normaliseName(name))) {
+      throw new Error(`Duplicate bank: "${name}" already exists`)
+    }
+    const { error } = await getSupabase().from('banks').insert({ name, kind: input.kind })
+    if (error) {
+      if (/duplicate key/i.test(error.message)) throw new Error(`Duplicate bank: "${name}" already exists`)
+      fail(error)
+    }
+  },
+
+  async setBankActive(id, active) {
+    const { error } = await getSupabase().from('banks').update({ active }).eq('id', id)
+    if (error) fail(error)
+  },
+
+  async addParty(input) {
+    const name = input.name.trim()
+    const existing = await this.listParties()
+    if (existing.some((p) => normaliseName(p.name) === normaliseName(name))) {
+      throw new Error(`Duplicate party: "${name}" already exists (names are compared ignoring case and extra spaces)`)
+    }
+    const { data, error } = await getSupabase().rpc('upsert_party', {
+      name,
+      phone: input.phone?.trim() || null,
+      address: input.address?.trim() || null,
+    })
+    if (error) fail(error)
+    return data as string
   },
 
   async listAgents() {
@@ -165,5 +238,9 @@ export const listCheques = () => active.listCheques()
 export const addCheque = (i: NewCheque) => active.addCheque(i)
 export const transitionCheque = (id: string, to: ChequeStatus, version: number) =>
   active.transitionCheque(id, to, version)
-export const listBanks = () => active.listBanks()
+export const listBanks = (includeInactive?: boolean) => active.listBanks(includeInactive)
 export const listAgents = () => active.listAgents()
+export const listParties = () => active.listParties()
+export const addBank = (i: NewBank) => active.addBank(i)
+export const setBankActive = (id: string, a: boolean) => active.setBankActive(id, a)
+export const addParty = (i: NewParty) => active.addParty(i)

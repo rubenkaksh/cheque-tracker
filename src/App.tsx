@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Button, ConfigProvider, Dropdown, Layout, Menu, Spin } from 'antd'
 import Dashboard from './features/Dashboard'
 import ChequeForm from './features/ChequeForm'
+import BanksPage from './features/BanksPage'
+import PartiesPage from './features/PartiesPage'
 import LoginPage from './features/LoginPage'
 import { AuthProvider, useAuth } from './lib/auth'
 
-type Tab = 'dashboard' | 'new'
+type Tab = 'dashboard' | 'new' | 'banks' | 'parties'
 
 function Shell() {
   const { session, role, loading, signOut } = useAuth()
@@ -15,7 +17,14 @@ function Shell() {
   if (!session) return <LoginPage />
 
   const isAdmin = role === 'admin'
-  const items = [{ key: 'dashboard', label: 'Dashboard' }, ...(isAdmin ? [{ key: 'new', label: 'New cheque' }] : [])]
+  const items = [{ key: 'dashboard', label: 'Dashboard' }, ...(isAdmin
+      ? [
+          { key: 'new', label: 'New cheque' },
+          { key: 'banks', label: 'Banks' },
+          { key: 'parties', label: 'Parties' },
+        ]
+      : []),
+  ]
   const email = session.user.email ?? ''
 
   return (
@@ -43,7 +52,15 @@ function Shell() {
         </Dropdown>
       </Layout.Header>
       <Layout.Content>
-        {tab === 'new' && isAdmin ? <ChequeForm onAdded={() => setTab('dashboard')} /> : <Dashboard />}
+        {tab === 'new' && isAdmin ? (
+          <ChequeForm onAdded={() => setTab('dashboard')} />
+        ) : tab === 'banks' && isAdmin ? (
+          <BanksPage />
+        ) : tab === 'parties' && isAdmin ? (
+          <PartiesPage />
+        ) : (
+          <Dashboard />
+        )}
       </Layout.Content>
     </Layout>
   )

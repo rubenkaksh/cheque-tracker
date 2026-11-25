@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed:demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",

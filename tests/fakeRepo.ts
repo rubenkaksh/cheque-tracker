@@ -1,4 +1,4 @@
-import { addDays, type Cheque, type ChequeRepo } from '../src/data/chequeRepo'
+import { addDays, normaliseName, type Bank, type Cheque, type ChequeRepo, type Party } from '../src/data/chequeRepo'
 import { TRANSITIONS } from '../src/data/transitions'
 import { todayKathmandu } from '../src/lib/bsdate'
 import type { ChequeStatus } from '../src/data/transitions'
@@ -34,9 +34,13 @@ export function makeFakeRepo(): ChequeRepo {
     mk(5, 'Test Bank Kavre', 'Test Hardware', 22000, -12, 'bounced'),
     mk(6, 'Test Bank Annapurna', 'Test Agro', 99999, 0, 'with_agent', 'Test Agent B'),
   ]
-  const banks = [
-    { id: 'b1', name: 'Test Bank Himalaya' },
-    { id: 'b2', name: 'Test Bank Everest' },
+  const banks: Bank[] = [
+    { id: 'b1', name: 'Test Bank Himalaya', kind: 'bank', active: true },
+    { id: 'b2', name: 'Test Bank Everest', kind: 'bank', active: true },
+  ]
+  const parties: Party[] = [
+    { id: 'p1', name: 'Test Traders Pvt' },
+    { id: 'p2', name: 'Test Mart' },
   ]
   return {
     async listCheques() {
@@ -61,8 +65,30 @@ export function makeFakeRepo(): ChequeRepo {
       c.status = to
       c.version += 1
     },
-    async listBanks() {
-      return banks
+    async listBanks(includeInactive = false) {
+      return banks.filter((b) => includeInactive || b.active).map((b) => ({ ...b }))
+    },
+    async listParties() {
+      return parties.map((p) => ({ ...p }))
+    },
+    async addBank(i) {
+      if (banks.some((b) => normaliseName(b.name) === normaliseName(i.name))) {
+        throw new Error(`Duplicate bank: "${i.name.trim()}" already exists`)
+      }
+      banks.push({ id: `b${banks.length + 1}`, name: i.name.trim(), kind: i.kind, active: true })
+    },
+    async setBankActive(id, active) {
+      const b = banks.find((x) => x.id === id)
+      if (!b) throw new Error('bank not found')
+      b.active = active
+    },
+    async addParty(i) {
+      if (parties.some((p) => normaliseName(p.name) === normaliseName(i.name))) {
+        throw new Error(`Duplicate party: "${i.name.trim()}" already exists`)
+      }
+      const id = `p${parties.length + 1}`
+      parties.push({ id, name: i.name.trim(), phone: i.phone ?? null, address: i.address ?? null })
+      return id
     },
     async listAgents() {
       return []

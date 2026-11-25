@@ -5,5 +5,5 @@ test('app loads', async ({ page }) => {
   const title = await page.title();
   expect(title.length).toBeGreaterThan(0);
   await expect(page.locator('body')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Collection Desk: sign in' })).toBeVisible();
 });
