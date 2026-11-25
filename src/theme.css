@@ -1,0 +1,24 @@
+/* fonts must be self-hosted (no Google @import), see P2-7 */
+
+@theme {
+  --color-ink: #142e27;
+  --color-muted: #5f6d66;
+  --color-line: #e6ebe4;
+  --color-paper: #f6f7f2;
+  --color-green: #174d3c;
+  --color-green-2: #286c50;
+  --color-lime: #d9efaa;
+  --color-amber: #d59834;
+  --color-red: #c65a4c;
+  --color-blue: #547c9d;
+  --color-soft-green: #e8f3e8;
+  --color-soft-amber: #fff5df;
+  --color-soft-red: #fbecea;
+  --color-sidebar: #123c32;
+
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-display: 'Manrope', system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, monospace;
+
+  --shadow-card: 0 16px 42px rgba(23, 52, 40, 0.07);
+}
