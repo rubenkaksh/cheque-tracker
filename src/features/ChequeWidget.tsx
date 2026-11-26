@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Button, Dropdown, Tag, message } from 'antd'
 import { adToBs, formatBs } from '../lib/bsdate'
 import { formatNpr } from '../lib/money'
 import { transitionCheque, type Cheque } from '../data/chequeRepo'
-import { colorFor, HOLD_STATUS, labelFor, TRANSITIONS, type ChequeStatus } from '../data/transitions'
+import RecordCashModal from './RecordCashModal'
+import { colorFor, HOLD_STATUS, labelFor, type ChequeStatus } from '../data/transitions'
 
 function bsOf(iso: string): string {
   try {
@@ -15,11 +17,19 @@ function bsOf(iso: string): string {
 interface Props {
   cheque: Cheque
   overdue: boolean
+  /** Statuses the CURRENT role may move this cheque to (from allowed_transitions). */
+  allowedTo: ChequeStatus[]
   onChanged: () => void
 }
 
-export default function ChequeWidget({ cheque, overdue, onChanged }: Props) {
-  const moves = TRANSITIONS[cheque.status]
+/** transition_cheque refuses these: they only happen through record_receipt. */
+const RECEIPT_ONLY: ChequeStatus[] = ['partial_cash', 'closed_full_cash']
+
+export default function ChequeWidget({ cheque, overdue, allowedTo, onChanged }: Props) {
+  const [cashOpen, setCashOpen] = useState(false)
+  const receiptStage = cheque.status === 'bounced' || cheque.status === 'partial_cash'
+  const moves = receiptStage ? allowedTo.filter((s) => !RECEIPT_ONLY.includes(s)) : allowedTo
+  const canRecordCash = receiptStage && allowedTo.some((s) => RECEIPT_ONLY.includes(s))
   const canHold = moves.includes(HOLD_STATUS)
 
   async function move(to: ChequeStatus) {
@@ -80,13 +90,19 @@ export default function ChequeWidget({ cheque, overdue, onChanged }: Props) {
         </Tag>
       </div>
 
-      {moves.length > 0 && (
+      {(moves.length > 0 || canRecordCash) && (
         <div className="mt-3 flex gap-2 pl-1">
+          {canRecordCash && (
+            <Button size="small" type="primary" onClick={() => setCashOpen(true)}>
+              Record cash
+            </Button>
+          )}
           {canHold && (
             <Button size="small" onClick={() => void move(HOLD_STATUS)}>
               Hold
             </Button>
           )}
+          {moves.length > 0 && (
           <Dropdown
             trigger={['click']}
             menu={{
@@ -98,7 +114,19 @@ export default function ChequeWidget({ cheque, overdue, onChanged }: Props) {
               Move status
             </Button>
           </Dropdown>
+          )}
         </div>
+      )}
+      {canRecordCash && (
+        <RecordCashModal
+          cheque={cheque}
+          open={cashOpen}
+          onClose={() => setCashOpen(false)}
+          onDone={() => {
+            setCashOpen(false)
+            onChanged()
+          }}
+        />
       )}
     </div>
   )

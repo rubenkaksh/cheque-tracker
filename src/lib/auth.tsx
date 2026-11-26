@@ -4,14 +4,14 @@ import { getSupabase } from './supabase'
 
 export type Role = 'admin' | 'agent'
 
-interface AuthState {
+export interface AuthState {
   session: Session | null
   role: Role | null
   loading: boolean
   signOut: () => Promise<void>
 }
 
-const Ctx = createContext<AuthState>({
+export const AuthContext = createContext<AuthState>({
   session: null,
   role: null,
   loading: true,
@@ -72,9 +72,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await getSupabase().auth.signOut()
     },
   }
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth(): AuthState {
-  return useContext(Ctx)
+  return useContext(AuthContext)
 }

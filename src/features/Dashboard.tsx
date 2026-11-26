@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Empty, Input, Segmented, Select, Spin, Statistic, Typography } from 'antd'
-import { addDays, listCheques, type Cheque } from '../data/chequeRepo'
+import { Alert, Button, Drawer, Empty, Grid, Input, Modal, Segmented, Select, Spin, Statistic, Typography } from 'antd'
+import { addDays, listAllowedTransitions, listCheques, type AllowedTransition, type Cheque } from '../data/chequeRepo'
+import { useAuth } from '../lib/auth'
 import { ALL_STATUSES, isTerminal, labelFor, type ChequeStatus } from '../data/transitions'
 import { adToBs, formatBs, todayKathmandu } from '../lib/bsdate'
+import ChequeForm from './ChequeForm'
 import ChequeWidget from './ChequeWidget'
 
 type Range = 'critical' | 'today' | 'overdue' | 'week' | 'all'
 
 export default function Dashboard() {
   const today = todayKathmandu()
+  const { role } = useAuth()
+  const screens = Grid.useBreakpoint()
+  const [newOpen, setNewOpen] = useState(false)
+  const [allowed, setAllowed] = useState<AllowedTransition[]>([])
   const [all, setAll] = useState<Cheque[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -32,6 +38,25 @@ export default function Dashboard() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    listAllowedTransitions()
+      .then(setAllowed)
+      .catch(() => setAllowed([]))
+  }, [])
+
+  const movesFor = (from: ChequeStatus): ChequeStatus[] =>
+    allowed.filter((a) => a.role === role && a.from === from).map((a) => a.to)
+
+  const newForm = (
+    <ChequeForm
+      embedded
+      onAdded={() => {
+        setNewOpen(false)
+        void load()
+      }}
+    />
+  )
 
   const open = all.filter((c) => !isTerminal(c.status))
   const dueToday = open.filter((c) => c.maturityDate === today).length
@@ -59,9 +84,23 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-6xl p-3 sm:p-6">
-      <Typography.Title level={2} style={{ marginBottom: 0 }}>
-        Dashboard
-      </Typography.Title>
+      <div className="flex items-center justify-between gap-2">
+        <Typography.Title level={2} style={{ marginBottom: 0 }}>
+          Dashboard
+        </Typography.Title>
+        <Button type="primary" size="large" onClick={() => setNewOpen(true)}>
+          New cheque
+        </Button>
+      </div>
+      {screens.md ? (
+        <Modal title="New cheque" open={newOpen} onCancel={() => setNewOpen(false)} footer={null} destroyOnHidden>
+          {newForm}
+        </Modal>
+      ) : (
+        <Drawer title="New cheque" open={newOpen} onClose={() => setNewOpen(false)} size="large" placement="bottom" destroyOnHidden>
+          {newForm}
+        </Drawer>
+      )}
       <div data-testid="today" className="mb-4 text-muted">
         Today: {today} (AD) / {formatBs(adToBs(today))} (BS)
       </div>
@@ -132,6 +171,7 @@ export default function Dashboard() {
               key={c.id}
               cheque={c}
               overdue={!isTerminal(c.status) && c.maturityDate < today}
+              allowedTo={movesFor(c.status)}
               onChanged={() => void load()}
             />
           ))}

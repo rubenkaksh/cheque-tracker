@@ -6,6 +6,7 @@ import { addCheque, addParty, listAgents, listBanks, listParties, type Agent, ty
 import { DEFAULT_STATUS, labelFor, type ChequeStatus } from '../data/transitions'
 import { adToBs, formatBs, todayKathmandu } from '../lib/bsdate'
 import { toPaisa } from '../lib/money'
+import { useAuth } from '../lib/auth'
 import { chequeFormSchema, normaliseChequeNo } from '../lib/validation'
 
 /** create_cheque accepts only these initial statuses for admins. */
@@ -61,7 +62,11 @@ function bsText(d?: Dayjs | null): string {
   }
 }
 
-export default function ChequeForm({ onAdded }: { onAdded: () => void }) {
+export default function ChequeForm({ onAdded, embedded = false }: { onAdded: () => void; embedded?: boolean }) {
+  const { role, session } = useAuth()
+  // Agents create only with_agent cheques for themselves (create_cheque enforces it too).
+  const agentMode = role === 'agent'
+  const selfId = session?.user.id
   const [form] = Form.useForm<FormValues>()
   const [dupError, setDupError] = useState<string | null>(null)
   const chequeNo = Form.useWatch('chequeNo', form)
@@ -115,7 +120,7 @@ export default function ChequeForm({ onAdded }: { onAdded: () => void }) {
 
   async function onFinish(values: FormValues) {
     setDupError(null)
-    const input = toSchemaInput(values)
+    const input = toSchemaInput({ ...(form.getFieldsValue(true) as FormValues), ...values })
     const parsed = chequeFormSchema.safeParse(input)
     if (!parsed.success) {
       message.error(parsed.error.issues[0].message)
@@ -146,8 +151,8 @@ export default function ChequeForm({ onAdded }: { onAdded: () => void }) {
   }
 
   return (
-    <div className="mx-auto max-w-xl p-3 sm:p-6">
-      <h2 className="mb-4 font-display text-2xl font-bold">New cheque</h2>
+    <div className={embedded ? '' : 'mx-auto max-w-xl p-3 sm:p-6'}>
+      {!embedded && <h2 className="mb-4 font-display text-2xl font-bold">New cheque</h2>}
       {loadError && (
         <Alert
           type="error"
@@ -167,7 +172,12 @@ export default function ChequeForm({ onAdded }: { onAdded: () => void }) {
         layout="vertical"
         requiredMark
         validateTrigger={['onChange', 'onBlur']}
-        initialValues={{ status: DEFAULT_STATUS, receivedDate: dayjs(todayKathmandu()), note: '' }}
+        initialValues={{
+          status: agentMode ? 'with_agent' : DEFAULT_STATUS,
+          agent: agentMode ? selfId : undefined,
+          receivedDate: dayjs(todayKathmandu()),
+          note: '',
+        }}
         onFinish={onFinish}
       >
         <Form.Item label="Bank" name="bank" required rules={[zodRule('bank', 'bank')]}>
@@ -228,6 +238,8 @@ export default function ChequeForm({ onAdded }: { onAdded: () => void }) {
         >
           <DatePicker className="!w-full" />
         </Form.Item>
+        {!agentMode && (
+          <>
         <Form.Item label="Status" name="status" required dependencies={['agent']}>
           <Select options={NEW_STATUSES.map((s) => ({ value: s, label: labelFor(s) }))} />
         </Form.Item>
@@ -235,11 +247,14 @@ export default function ChequeForm({ onAdded }: { onAdded: () => void }) {
           label="Agent"
           name="agent"
           required={status === 'with_agent'}
+         
           dependencies={['status']}
           rules={[zodRule('agentId', 'agent')]}
         >
           <Select allowClear placeholder="Select agent" options={agents.map((a) => ({ value: a.id, label: a.name }))} />
         </Form.Item>
+          </>
+        )}
         <Form.Item label="Note" name="note" rules={[zodRule('note', 'note')]}>
           <Input.TextArea rows={3} maxLength={500} showCount />
         </Form.Item>

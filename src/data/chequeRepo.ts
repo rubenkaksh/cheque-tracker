@@ -66,6 +66,23 @@ export interface NewCheque {
   note?: string
 }
 
+export type ReceiptMethod = 'cash' | 'bank_transfer'
+
+export interface NewReceipt {
+  chequeId: string
+  amountPaisa: bigint
+  method: ReceiptMethod
+  receivedOn: string
+  note?: string
+}
+
+/** One row of the allowed_transitions table (the DB is the source of truth). */
+export interface AllowedTransition {
+  from: ChequeStatus
+  to: ChequeStatus
+  role: 'admin' | 'agent'
+}
+
 export interface ChequeRepo {
   listCheques(): Promise<Cheque[]>
   addCheque(input: NewCheque): Promise<void>
@@ -78,6 +95,12 @@ export interface ChequeRepo {
   setBankActive(id: string, active: boolean): Promise<void>
   /** Throws on a duplicate (normalised) name; returns the new party id. */
   addParty(input: NewParty): Promise<string>
+  /** All rows of allowed_transitions (callers filter by their role). */
+  listAllowedTransitions(): Promise<AllowedTransition[]>
+  /** Calls the record_receipt RPC (the only way to reach partial_cash / closed_full_cash). */
+  recordReceipt(input: NewReceipt): Promise<void>
+  /** Outstanding balance in paisa from the cheque_balance view. */
+  getBalance(chequeId: string): Promise<bigint>
 }
 
 export function addDays(iso: string, days: number): string {
@@ -215,6 +238,37 @@ export const supabaseRepo: ChequeRepo = {
     return data as string
   },
 
+  async listAllowedTransitions() {
+    const { data, error } = await getSupabase()
+      .from('allowed_transitions')
+      .select('from_status, to_status, role')
+    if (error) fail(error)
+    return ((data ?? []) as { from_status: ChequeStatus; to_status: ChequeStatus; role: 'admin' | 'agent' }[]).map(
+      (r) => ({ from: r.from_status, to: r.to_status, role: r.role }),
+    )
+  },
+
+  async recordReceipt(input) {
+    const { error } = await getSupabase().rpc('record_receipt', {
+      cheque_id: input.chequeId,
+      amount_paisa: input.amountPaisa.toString(),
+      method: input.method,
+      received_on: input.receivedOn,
+      note: input.note ?? null,
+    })
+    if (error) fail(error)
+  },
+
+  async getBalance(chequeId) {
+    const { data, error } = await getSupabase()
+      .from('cheque_balance')
+      .select('balance_paisa')
+      .eq('cheque_id', chequeId)
+      .maybeSingle()
+    if (error) fail(error)
+    return BigInt((data as { balance_paisa: number | string } | null)?.balance_paisa ?? 0)
+  },
+
   async listAgents() {
     const { data, error } = await getSupabase()
       .from('profiles')
@@ -244,3 +298,6 @@ export const listParties = () => active.listParties()
 export const addBank = (i: NewBank) => active.addBank(i)
 export const setBankActive = (id: string, a: boolean) => active.setBankActive(id, a)
 export const addParty = (i: NewParty) => active.addParty(i)
+export const listAllowedTransitions = () => active.listAllowedTransitions()
+export const recordReceipt = (i: NewReceipt) => active.recordReceipt(i)
+export const getBalance = (id: string) => active.getBalance(id)

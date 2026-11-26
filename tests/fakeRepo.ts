@@ -1,4 +1,4 @@
-import { addDays, normaliseName, type Bank, type Cheque, type ChequeRepo, type Party } from '../src/data/chequeRepo'
+import { addDays, normaliseName, type AllowedTransition, type Bank, type Cheque, type ChequeRepo, type Party } from '../src/data/chequeRepo'
 import { TRANSITIONS } from '../src/data/transitions'
 import { todayKathmandu } from '../src/lib/bsdate'
 import type { ChequeStatus } from '../src/data/transitions'
@@ -42,7 +42,34 @@ export function makeFakeRepo(): ChequeRepo {
     { id: 'p1', name: 'Test Traders Pvt' },
     { id: 'p2', name: 'Test Mart' },
   ]
+  const receipts: { chequeId: string; amountPaisa: bigint }[] = []
+  const allowed: AllowedTransition[] = [
+    ...(Object.entries(TRANSITIONS) as [ChequeStatus, ChequeStatus[]][]).flatMap(([from, tos]) =>
+      tos.map((to) => ({ from, to, role: 'admin' as const })),
+    ),
+    { from: 'bounced', to: 'partial_cash', role: 'agent' },
+    { from: 'bounced', to: 'closed_full_cash', role: 'agent' },
+    { from: 'partial_cash', to: 'closed_full_cash', role: 'agent' },
+  ]
   return {
+    async listAllowedTransitions() {
+      return allowed.map((a) => ({ ...a }))
+    },
+    async getBalance(id) {
+      const c = rows.find((r) => r.id === id)
+      if (!c) throw new Error('cheque not found')
+      return c.amountPaisa - receipts.filter((r) => r.chequeId === id).reduce((a, r) => a + r.amountPaisa, 0n)
+    },
+    async recordReceipt(i) {
+      const c = rows.find((r) => r.id === i.chequeId)
+      if (!c) throw new Error('cheque not found')
+      if (c.status !== 'bounced' && c.status !== 'partial_cash') throw new Error('receipts are only accepted on bounced or partial_cash cheques')
+      const bal = await this.getBalance(i.chequeId)
+      if (i.amountPaisa <= 0n || i.amountPaisa > bal) throw new Error('receipt amount exceeds the outstanding balance')
+      receipts.push({ chequeId: i.chequeId, amountPaisa: i.amountPaisa })
+      c.status = i.amountPaisa === bal ? 'closed_full_cash' : 'partial_cash'
+      c.version += 1
+    },
     async listCheques() {
       return rows.map((r) => ({ ...r }))
     },
