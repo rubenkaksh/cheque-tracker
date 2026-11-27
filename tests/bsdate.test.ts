@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bsToAd, adToBs, isValidBs, formatBs, todayKathmandu } from '../src/lib/bsdate'
+import { bsToAd, adToBs, isValidBs, formatBs, formatAdAsBs, formatBsAd, bsMonthDays, todayKathmandu } from '../src/lib/bsdate'
 
 describe('bsToAd', () => {
   it('converts BS 2083-08-05 to AD 2026-11-21', () => {
@@ -58,5 +58,35 @@ describe('todayKathmandu', () => {
 
   it('stays on the same day at 17:00Z', () => {
     expect(todayKathmandu(new Date('2026-11-24T17:00:00Z'))).toBe('2026-11-24')
+  })
+})
+
+describe('formatAdAsBs / formatBsAd', () => {
+  const known: [string, string][] = [
+    ['2026-11-25', '2083-08-09 BS'],
+    ['2026-11-21', '2083-08-05 BS'],
+    ['2023-09-01', '2080-05-15 BS'],
+    ['2025-04-13', '2081-12-31 BS'], // last day of Chaitra
+    ['2025-04-14', '2082-01-01 BS'], // first day of Baisakh, next year
+    ['2034-04-13', '2090-12-30 BS'],
+  ]
+  it.each(known)('AD %s shows as %s and round trips back via bsToAd', (ad, text) => {
+    expect(formatAdAsBs(ad)).toBe(text)
+    const [y, m, d] = text.replace(' BS', '').split('-').map(Number)
+    expect(bsToAd(y, m, d)).toBe(ad)
+  })
+
+  it('falls back instead of throwing for out-of-range or malformed input', () => {
+    expect(formatAdAsBs('1900-01-01')).toBe('BS n/a')
+    expect(formatAdAsBs('nope')).toBe('BS n/a')
+  })
+
+  it('formatBsAd labels the AD date', () => {
+    expect(formatBsAd('2026-11-25')).toBe('AD 2026-11-25')
+  })
+
+  it('bsMonthDays reports 32 for Asar 2083 and 29 for Mangsir 2083', () => {
+    expect(bsMonthDays(2083, 3)).toBe(32)
+    expect(bsMonthDays(2083, 8)).toBe(29)
   })
 })

@@ -32,6 +32,7 @@ describe('supabaseRepo.listCheques read path', () => {
         maturity_date: '2026-12-01',
         status: 'with_agent',
         note: null,
+        next_action_date: '2026-12-04',
         version: 3,
         agent_id: 'u1',
         banks: { name: 'Test Bank Himalaya' },
@@ -65,7 +66,9 @@ describe('supabaseRepo.listCheques read path', () => {
       maturityDate: '2026-12-01',
       status: 'with_agent',
       agent: 'Test Agent A',
+      agentId: 'u1',
       note: undefined,
+      nextActionDate: '2026-12-04',
       version: 3,
     })
     expect(typeof a.amountPaisa).toBe('bigint')

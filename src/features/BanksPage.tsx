@@ -1,17 +1,70 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Form, Input, Select, Switch, Table } from 'antd'
-import { addBank, listBanks, setBankActive, type Bank, type BankKind } from '../data/chequeRepo'
+import { listBanks, setBankActive, updateBank, type Bank, type BankKind } from '../data/chequeRepo'
+import Popup from './Popup'
+import QuickAddBank from './QuickAddBank'
 
-interface Values {
+interface EditValues {
   name?: string
   kind?: BankKind
 }
 
-export default function BanksPage() {
-  const [form] = Form.useForm<Values>()
-  const [banks, setBanks] = useState<Bank[]>([])
+function EditBankForm({ bank, onSaved, onCancel }: { bank: Bank; onSaved: () => void; onCancel: () => void }) {
+  const [form] = Form.useForm<EditValues>()
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  async function onFinish(v: EditValues) {
+    setError(null)
+    setSaving(true)
+    try {
+      await updateBank(bank.id, { name: (v.name ?? '').trim(), kind: v.kind ?? 'bank' })
+      onSaved()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update bank')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Form<EditValues>
+      name="editBank"
+      form={form}
+      layout="vertical"
+      initialValues={{ name: bank.name, kind: bank.kind ?? 'bank' }}
+      onFinish={onFinish}
+    >
+      {error && <Alert type="error" showIcon message={error} className="mb-4" />}
+      <Form.Item
+        label="Bank name"
+        name="name"
+        rules={[{ required: true, whitespace: true, message: 'Bank name is required' }]}
+      >
+        <Input />
+      </Form.Item>
+      <Form.Item label="Kind" name="kind" rules={[{ required: true }]}>
+        <Select
+          options={[
+            { value: 'bank', label: 'Bank' },
+            { value: 'saccos', label: 'SACCOS' },
+          ]}
+        />
+      </Form.Item>
+      <div className="flex gap-2">
+        <Button type="primary" htmlType="submit" loading={saving}>
+          Save bank
+        </Button>
+        <Button onClick={onCancel}>Cancel</Button>
+      </div>
+    </Form>
+  )
+}
+
+export default function BanksPage() {
+  const [banks, setBanks] = useState<Bank[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<Bank | null>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -24,20 +77,6 @@ export default function BanksPage() {
   useEffect(() => {
     void reload()
   }, [reload])
-
-  async function onFinish(v: Values) {
-    setError(null)
-    setSaving(true)
-    try {
-      await addBank({ name: v.name ?? '', kind: v.kind ?? 'bank' })
-      form.resetFields()
-      await reload()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not add bank')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   async function toggle(b: Bank, active: boolean) {
     setError(null)
@@ -53,32 +92,9 @@ export default function BanksPage() {
     <div className="mx-auto max-w-3xl p-3 sm:p-6">
       <h2 className="mb-4 font-display text-2xl font-bold">Banks</h2>
       {error && <Alert type="error" showIcon message={error} className="mb-4" />}
-      <Form<Values>
-        form={form}
-        layout="vertical"
-        initialValues={{ kind: 'bank' }}
-        onFinish={onFinish}
-        className="mb-6"
-      >
-        <Form.Item
-          label="Bank name"
-          name="name"
-          rules={[{ required: true, whitespace: true, message: 'Bank name is required' }]}
-        >
-          <Input placeholder="e.g. Test Bank Omega" />
-        </Form.Item>
-        <Form.Item label="Kind" name="kind" rules={[{ required: true }]}>
-          <Select
-            options={[
-              { value: 'bank', label: 'Bank' },
-              { value: 'saccos', label: 'SACCOS' },
-            ]}
-          />
-        </Form.Item>
-        <Button type="primary" htmlType="submit" loading={saving}>
-          Add bank
-        </Button>
-      </Form>
+      <div className="mb-6">
+        <QuickAddBank onCreated={() => void reload()} />
+      </div>
       <Table<Bank>
         rowKey="id"
         size="small"
@@ -95,8 +111,29 @@ export default function BanksPage() {
               <Switch checked={a} aria-label={`Active ${b.name}`} onChange={(c) => void toggle(b, c)} />
             ),
           },
+          {
+            title: '',
+            key: 'edit',
+            render: (_: unknown, b) => (
+              <Button size="small" aria-label={`Edit ${b.name}`} onClick={() => setEditing(b)}>
+                Edit
+              </Button>
+            ),
+          },
         ]}
       />
+      <Popup title="Edit bank" open={editing !== null} onClose={() => setEditing(null)}>
+        {editing && (
+          <EditBankForm
+            bank={editing}
+            onCancel={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null)
+              void reload()
+            }}
+          />
+        )}
+      </Popup>
     </div>
   )
 }

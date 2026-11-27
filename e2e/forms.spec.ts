@@ -31,9 +31,9 @@ test('admin adds a bank and party, then a cheque appears on the dashboard', asyn
   await page.locator('input#party').fill(party)
   await page.getByPlaceholder('e.g. 100-009').fill(`E2E${id}`)
   await page.getByLabel('Amount (NPR)').fill('12345')
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
-  await page.getByLabel('Maturity date').fill(today)
-  await page.getByLabel('Maturity date').press('Enter') // commits the date; antd also submits the form
+  // Maturity date is a BS field (Year/Month/Day selects); its Today button sets Kathmandu today.
+  await page.getByRole('button', { name: 'Maturity date: set to today' }).click()
+  await expect(page.getByTestId('bs-ad-line').last()).toContainText('AD ')
   await page.getByRole('button', { name: 'Add cheque' }).click({ timeout: 2000 }).catch(() => {})
 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()

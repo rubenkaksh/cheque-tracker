@@ -3,11 +3,11 @@ import { Alert, Button, Drawer, Empty, Grid, Input, Modal, Segmented, Select, Sp
 import { addDays, listAllowedTransitions, listCheques, type AllowedTransition, type Cheque } from '../data/chequeRepo'
 import { useAuth } from '../lib/auth'
 import { ALL_STATUSES, isTerminal, labelFor, type ChequeStatus } from '../data/transitions'
-import { adToBs, formatBs, todayKathmandu } from '../lib/bsdate'
+import { formatAdAsBs, formatBsAd, todayKathmandu } from '../lib/bsdate'
 import ChequeForm from './ChequeForm'
 import ChequeWidget from './ChequeWidget'
 
-type Range = 'critical' | 'today' | 'overdue' | 'week' | 'all'
+type Range = 'critical' | 'today' | 'overdue' | 'followup' | 'week' | 'all'
 
 export default function Dashboard() {
   const today = todayKathmandu()
@@ -61,6 +61,7 @@ export default function Dashboard() {
   const open = all.filter((c) => !isTerminal(c.status))
   const dueToday = open.filter((c) => c.maturityDate === today).length
   const overdueCount = open.filter((c) => c.maturityDate < today).length
+  const followUpCount = open.filter((c) => c.nextActionDate && c.nextActionDate <= today).length
   const banks = Array.from(new Set(all.map((c) => c.bank))).sort()
 
   const weekEnd = addDays(today, 6)
@@ -71,6 +72,7 @@ export default function Dashboard() {
       if (range === 'critical' && !(o && c.maturityDate <= today)) return false
       if (range === 'today' && !(o && c.maturityDate === today)) return false
       if (range === 'overdue' && !(o && c.maturityDate < today)) return false
+      if (range === 'followup' && !(o && c.nextActionDate && c.nextActionDate <= today)) return false
       if (range === 'week' && !(o && c.maturityDate >= today && c.maturityDate <= weekEnd)) return false
       if (status && c.status !== status) return false
       if (bank && c.bank !== bank) return false
@@ -102,7 +104,7 @@ export default function Dashboard() {
         </Drawer>
       )}
       <div data-testid="today" className="mb-4 text-muted">
-        Today: {today} (AD) / {formatBs(adToBs(today))} (BS)
+        Today: {formatAdAsBs(today)} ({formatBsAd(today)})
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-3">
@@ -120,6 +122,7 @@ export default function Dashboard() {
               { label: 'Critical today', value: 'critical' },
               { label: 'Due today', value: 'today' },
               { label: 'Overdue', value: 'overdue' },
+              { label: `Follow-ups due (${followUpCount})`, value: 'followup' },
               { label: 'This week', value: 'week' },
               { label: 'All', value: 'all' },
             ]}

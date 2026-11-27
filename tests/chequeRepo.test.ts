@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const rpc = vi.fn()
-vi.mock('../src/lib/supabase', () => ({ getSupabase: () => ({ rpc }) }))
+const invoke = vi.fn()
+vi.mock('../src/lib/supabase', () => ({ getSupabase: () => ({ rpc, functions: { invoke } }) }))
 
 import { supabaseRepo } from '../src/data/chequeRepo'
 import { makeFakeRepo } from './fakeRepo'
@@ -45,6 +46,62 @@ describe('supabaseRepo error mapping', () => {
     expect(rpc).toHaveBeenCalledWith('replace_cheque', {
       cheque_id: 'id', expected_version: 3, new_cheque_no: 'NEW1234', note: 'swap',
     })
+  })
+})
+
+describe('supabaseRepo edit calls', () => {
+  beforeEach(() => {
+    rpc.mockReset()
+    invoke.mockReset()
+  })
+
+  it('calls update_cheque with a snake_case patch and returns the new version', async () => {
+    rpc.mockResolvedValueOnce({ data: 4, error: null })
+    const v = await supabaseRepo.updateCheque('id', 3, { chequeNo: 'ABC9999', amountPaisa: 250000n, note: null })
+    expect(v).toBe(4)
+    expect(rpc).toHaveBeenCalledWith('update_cheque', {
+      cheque_id: 'id',
+      expected_version: 3,
+      patch: { cheque_no: 'ABC9999', amount_paisa: '250000', note: null },
+    })
+  })
+
+  it('maps a stale update_cheque to the reload message', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'stale version: cheque was changed by someone else' } })
+    await expect(supabaseRepo.updateCheque('id', 1, { note: 'x' })).rejects.toThrow(/changed by someone else, reload/)
+  })
+
+  it('calls update_bank and update_party', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await supabaseRepo.updateBank('b1', { name: 'New', kind: 'saccos', active: false })
+    await supabaseRepo.updateParty('p1', { name: 'P', phone: null })
+    expect(rpc).toHaveBeenNthCalledWith(1, 'update_bank', { bank_id: 'b1', patch: { name: 'New', kind: 'saccos', active: false } })
+    expect(rpc).toHaveBeenNthCalledWith(2, 'update_party', { party_id: 'p1', patch: { name: 'P', phone: null } })
+  })
+
+  it('calls set_profile_active', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: null })
+    await supabaseRepo.setAgentActive('u1', false)
+    expect(rpc).toHaveBeenCalledWith('set_profile_active', { profile_id: 'u1', active: false })
+  })
+
+  it('invokes admin-create-agent with snake_case body and defaults role to agent', async () => {
+    invoke.mockResolvedValueOnce({ data: { id: 'u2', email: 'a@test.invalid', role: 'agent' }, error: null })
+    const r = await supabaseRepo.createAgent({ email: 'a@test.invalid', password: 'longpassword1', fullName: 'A Person' })
+    expect(r).toEqual({ id: 'u2', email: 'a@test.invalid', role: 'agent' })
+    expect(invoke).toHaveBeenCalledWith('admin-create-agent', {
+      body: { email: 'a@test.invalid', password: 'longpassword1', full_name: 'A Person', role: 'agent' },
+    })
+  })
+
+  it('surfaces the edge function error message', async () => {
+    invoke.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'Edge Function returned a non-2xx status code', context: { json: async () => ({ error: 'admin only' }) } },
+    })
+    await expect(
+      supabaseRepo.createAgent({ email: 'a@test.invalid', password: 'longpassword1', fullName: 'A Person' }),
+    ).rejects.toThrow('admin only')
   })
 })
 

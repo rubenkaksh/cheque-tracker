@@ -1,10 +1,11 @@
-import { addDays, normaliseName, type AllowedTransition, type Bank, type Cheque, type ChequeRepo, type Party } from '../src/data/chequeRepo'
-import { TRANSITIONS } from '../src/data/transitions'
+import { addDays, normaliseName, type AllowedTransition, type Bank, type Agent, type Cheque, type ChequeRepo, type Party, type Remark } from '../src/data/chequeRepo'
+import { ALLOWED_ROWS, transitionsFor } from '../src/data/transitions'
 import { todayKathmandu } from '../src/lib/bsdate'
 import type { ChequeStatus } from '../src/data/transitions'
 
-/** In-memory ChequeRepo for tests. Synthetic data only. */
-export function makeFakeRepo(): ChequeRepo {
+/** In-memory ChequeRepo for tests. Synthetic data only. role decides which transitions are legal. */
+export function makeFakeRepo(role: 'admin' | 'agent' = 'admin'): ChequeRepo {
+  const moves = transitionsFor(role)
   const today = todayKathmandu()
   const mk = (
     n: number,
@@ -42,15 +43,10 @@ export function makeFakeRepo(): ChequeRepo {
     { id: 'p1', name: 'Test Traders Pvt' },
     { id: 'p2', name: 'Test Mart' },
   ]
+  const agents: Agent[] = []
   const receipts: { chequeId: string; amountPaisa: bigint }[] = []
-  const allowed: AllowedTransition[] = [
-    ...(Object.entries(TRANSITIONS) as [ChequeStatus, ChequeStatus[]][]).flatMap(([from, tos]) =>
-      tos.map((to) => ({ from, to, role: 'admin' as const })),
-    ),
-    { from: 'bounced', to: 'partial_cash', role: 'agent' },
-    { from: 'bounced', to: 'closed_full_cash', role: 'agent' },
-    { from: 'partial_cash', to: 'closed_full_cash', role: 'agent' },
-  ]
+  const allowed: AllowedTransition[] = ALLOWED_ROWS.map((r) => ({ ...r }))
+  const remarks: (Remark & { chequeId: string })[] = []
   return {
     async listAllowedTransitions() {
       return allowed.map((a) => ({ ...a }))
@@ -88,7 +84,7 @@ export function makeFakeRepo(): ChequeRepo {
       const c = rows.find((r) => r.id === id)
       if (!c) throw new Error('cheque not found')
       if (c.version !== version) throw new Error('This cheque was changed by someone else, reload')
-      if (!TRANSITIONS[c.status].includes(to)) throw new Error(`Illegal transition ${c.status} -> ${to}`)
+      if (!moves[c.status].includes(to)) throw new Error(`Illegal transition ${c.status} -> ${to}`)
       c.status = to
       c.version += 1
     },
@@ -130,8 +126,80 @@ export function makeFakeRepo(): ChequeRepo {
       parties.push({ id, name: i.name.trim(), phone: i.phone ?? null, address: i.address ?? null })
       return id
     },
-    async listAgents() {
-      return []
+    async listAgents(includeInactive = false) {
+      return agents.filter((a) => includeInactive || a.active).map((a) => ({ ...a }))
+    },
+    async updateCheque(id, version, patch) {
+      const c = rows.find((r) => r.id === id)
+      if (!c) throw new Error('cheque not found')
+      if (c.version !== version) throw new Error('This cheque was changed by someone else, reload')
+      if (['cleared', 'closed_full_cash', 'replaced', 'party_flagged'].includes(c.status)) {
+        throw new Error(`cheque in status ${c.status} can no longer be edited`)
+      }
+      if (patch.amountPaisa !== undefined) {
+        const paid = receipts.filter((r) => r.chequeId === id).reduce((a, r) => a + r.amountPaisa, 0n)
+        if (patch.amountPaisa < paid) throw new Error('amount cannot be below the amount already received')
+        c.amountPaisa = patch.amountPaisa
+      }
+      if (patch.chequeNo !== undefined) c.chequeNoNorm = patch.chequeNo.replace(/[\s-]/g, '').toUpperCase()
+      if (patch.receivedDate !== undefined) c.receivedDate = patch.receivedDate
+      if (patch.maturityDate !== undefined) c.maturityDate = patch.maturityDate
+      if (patch.note !== undefined) c.note = patch.note ?? undefined
+      if (patch.bankId !== undefined) c.bank = banks.find((b) => b.id === patch.bankId)?.name ?? c.bank
+      if (patch.partyId !== undefined) c.party = parties.find((p) => p.id === patch.partyId)?.name ?? c.party
+      if (patch.agentId !== undefined) c.agent = agents.find((a) => a.id === patch.agentId)?.name
+      c.version += 1
+      return c.version
+    },
+    async updateBank(id, patch) {
+      const b = banks.find((x) => x.id === id)
+      if (!b) throw new Error('bank not found')
+      if (patch.name !== undefined) {
+        if (banks.some((x) => x.id !== id && normaliseName(x.name) === normaliseName(patch.name!))) {
+          throw new Error(`duplicate bank: "${patch.name.trim()}" already exists`)
+        }
+        b.name = patch.name.trim()
+      }
+      if (patch.kind !== undefined) b.kind = patch.kind
+      if (patch.active !== undefined) b.active = patch.active
+    },
+    async updateParty(id, patch) {
+      const p = parties.find((x) => x.id === id)
+      if (!p) throw new Error('party not found')
+      if (patch.name !== undefined) {
+        if (parties.some((x) => x.id !== id && normaliseName(x.name) === normaliseName(patch.name!))) {
+          throw new Error(`duplicate party: "${patch.name.trim()}" already exists`)
+        }
+        p.name = patch.name.trim()
+      }
+      if (patch.phone !== undefined) p.phone = patch.phone
+      if (patch.address !== undefined) p.address = patch.address
+    },
+    async createAgent(i) {
+      if (i.password.length < 10) throw new Error('password must be at least 10 characters')
+      const id = `agent-${agents.length + 1}`
+      agents.push({ id, name: i.fullName, active: true })
+      return { id, email: i.email, role: i.role ?? 'agent' }
+    },
+    async addRemark(chequeId, remark, nextActionDate) {
+      const c = rows.find((r) => r.id === chequeId)
+      if (!c) throw new Error('cheque not found')
+      const text = remark.trim()
+      if (!text) throw new Error('remark cannot be empty')
+      if (nextActionDate) {
+        if (nextActionDate < today) throw new Error('follow-up date cannot be in the past')
+        c.nextActionDate = nextActionDate
+        c.version += 1
+      }
+      remarks.unshift({ id: `r${remarks.length + 1}`, chequeId, at: new Date().toISOString(), note: text, author: 'Test User', nextActionDate })
+    },
+    async listRemarks(chequeId) {
+      return remarks.filter((r) => r.chequeId === chequeId).map(({ chequeId: _c, ...r }) => ({ ...r }))
+    },
+    async setAgentActive(id, active) {
+      const a = agents.find((x) => x.id === id)
+      if (!a) throw new Error('profile not found')
+      a.active = active
     },
   }
 }

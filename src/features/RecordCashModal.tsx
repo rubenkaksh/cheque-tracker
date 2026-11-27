@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Alert, DatePicker, Form, Input, InputNumber, Modal, Select, message } from 'antd'
-import dayjs, { type Dayjs } from 'dayjs'
+import { Alert, Form, Input, InputNumber, Modal, Select, message } from 'antd'
 import { getBalance, recordReceipt, type Cheque, type ReceiptMethod } from '../data/chequeRepo'
 import { todayKathmandu } from '../lib/bsdate'
+import BsDateField from './BsDateField'
 import { formatNpr, toPaisa } from '../lib/money'
 
 interface Values {
   amount?: string | number | null
   method: ReceiptMethod
-  date: Dayjs
+  date: string | null
   note?: string
 }
 
@@ -61,7 +61,7 @@ export default function RecordCashModal({ cheque, open, onClose, onDone }: Props
         chequeId: cheque.id,
         amountPaisa: paisa,
         method: v.method,
-        receivedOn: v.date.format('YYYY-MM-DD'),
+        receivedOn: v.date ?? todayKathmandu(),
         note: v.note?.trim() || undefined,
       })
       message.success(`${cheque.party}: received ${formatNpr(Number(paisa))}`)
@@ -92,7 +92,7 @@ export default function RecordCashModal({ cheque, open, onClose, onDone }: Props
       <Form<Values>
         form={form}
         layout="vertical"
-        initialValues={{ method: 'cash', date: dayjs(todayKathmandu()), note: '' }}
+        initialValues={{ method: 'cash', date: todayKathmandu(), note: '' }}
         onFinish={onFinish}
       >
         <Form.Item label="Amount (NPR)" name="amount" required rules={[{ required: true, message: 'Amount is required' }]}>
@@ -102,7 +102,7 @@ export default function RecordCashModal({ cheque, open, onClose, onDone }: Props
           <Select options={METHODS} />
         </Form.Item>
         <Form.Item label="Date received" name="date" required>
-          <DatePicker className="!w-full" allowClear={false} />
+          <BsDateField label="Date received" />
         </Form.Item>
         <Form.Item label="Note" name="note">
           <Input.TextArea rows={2} maxLength={500} />

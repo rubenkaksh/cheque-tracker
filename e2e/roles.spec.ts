@@ -11,7 +11,6 @@ const env = Object.fromEntries(
 )
 const API = process.env.VITE_SUPABASE_URL ?? env.VITE_SUPABASE_URL
 const KEY = process.env.VITE_SUPABASE_ANON_KEY ?? env.VITE_SUPABASE_ANON_KEY
-const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
 
 async function token(email: string): Promise<string> {
   const r = await fetch(`${API}/auth/v1/token?grant_type=password`, {
@@ -53,8 +52,8 @@ async function fillNewCheque(page: Page, opts: { bank: string; party: string; no
   await dlg.locator('input#party').fill(opts.party)
   await dlg.getByPlaceholder('e.g. 100-009').fill(opts.no)
   await dlg.getByLabel('Amount (NPR)').fill('12345')
-  await dlg.getByLabel('Maturity date').fill(today())
-  await dlg.getByLabel('Maturity date').press('Enter')
+  // BS date field: the Today button sets Kathmandu today (maturity = due today).
+  await dlg.getByRole('button', { name: 'Maturity date: set to today' }).click()
   await dlg.getByRole('button', { name: 'Add cheque' }).click({ timeout: 2000 }).catch(() => {})
   await expect(dlg).toBeHidden()
 }
@@ -81,7 +80,11 @@ test('agent sees own cheques only, creates one, and records a cash receipt', asy
   const card = page.getByTestId('cheque-widget').filter({ hasText: party })
   await expect(card).toBeVisible()
   await expect(card).toContainText('With agent')
-  await expect(card.getByRole('button', { name: 'Move status' })).toHaveCount(0)
+  // Migration 0010: an agent may deposit their own with_agent cheque at the bank, nothing else.
+  await card.getByRole('button', { name: 'Move status' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Deposited' })).toBeVisible()
+  await expect(page.locator('.ant-dropdown:visible .ant-dropdown-menu-item')).toHaveCount(1)
+  await page.keyboard.press('Escape')
   await expect(card.getByRole('button', { name: 'Hold' })).toHaveCount(0)
 
   // Only own cheques: every visible widget names this agent.

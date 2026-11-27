@@ -13,8 +13,20 @@ export interface Cheque {
   maturityDate: string
   status: ChequeStatus
   agent?: string
+  agentId?: string
   note?: string
+  /** Follow-up date (AD ISO), set on bounce / partial cash / by a remark. */
+  nextActionDate?: string
   version: number
+}
+
+/** A follow-up remark (cheque_events row with payload kind = remark). */
+export interface Remark {
+  id: string
+  at: string
+  note: string
+  author?: string
+  nextActionDate?: string
 }
 
 export type BankKind = 'bank' | 'saccos'
@@ -52,6 +64,44 @@ export function normaliseName(s: string): string {
 export interface Agent {
   id: string
   name: string
+  active?: boolean
+}
+
+/** Editable cheque fields (update_cheque whitelist). null clears agentId / note. */
+export interface ChequePatch {
+  chequeNo?: string
+  amountPaisa?: bigint
+  bankId?: string
+  partyId?: string
+  receivedDate?: string
+  maturityDate?: string
+  agentId?: string | null
+  note?: string | null
+}
+
+export interface BankPatch {
+  name?: string
+  kind?: BankKind
+  active?: boolean
+}
+
+export interface PartyPatch {
+  name?: string
+  phone?: string | null
+  address?: string | null
+}
+
+export interface NewAgent {
+  email: string
+  password: string
+  fullName: string
+  role?: 'agent' | 'admin'
+}
+
+export interface CreatedAgent {
+  id: string
+  email: string
+  role: 'agent' | 'admin'
 }
 
 export interface NewCheque {
@@ -89,7 +139,8 @@ export interface ChequeRepo {
   transitionCheque(id: string, toStatus: ChequeStatus, version: number): Promise<void>
   /** Active banks only, unless includeInactive is true. */
   listBanks(includeInactive?: boolean): Promise<Bank[]>
-  listAgents(): Promise<Agent[]>
+  /** Agents (role = agent); active ones only unless includeInactive is true. */
+  listAgents(includeInactive?: boolean): Promise<Agent[]>
   listParties(): Promise<Party[]>
   addBank(input: NewBank): Promise<void>
   setBankActive(id: string, active: boolean): Promise<void>
@@ -103,6 +154,20 @@ export interface ChequeRepo {
   getBalance(chequeId: string): Promise<bigint>
   /** Calls the replace_cheque RPC (admin only): old cheque -> replaced, new cheque for the balance. */
   replaceCheque(id: string, version: number, newChequeNo: string, note?: string): Promise<void>
+  /** Admin only: update_cheque RPC (optimistic lock). Returns the new version. */
+  updateCheque(id: string, version: number, patch: ChequePatch): Promise<number>
+  /** Admin only: update_bank RPC. */
+  updateBank(id: string, patch: BankPatch): Promise<void>
+  /** Admin only: update_party RPC. */
+  updateParty(id: string, patch: PartyPatch): Promise<void>
+  /** Admin only: admin-create-agent edge function. The password is never returned. */
+  createAgent(input: NewAgent): Promise<CreatedAgent>
+  /** Admin only: set_profile_active RPC (an admin cannot deactivate themselves). */
+  setAgentActive(id: string, active: boolean): Promise<void>
+  /** add_remark RPC: admin on any cheque, agent on own. Optional follow-up date (AD ISO). */
+  addRemark(chequeId: string, remark: string, nextActionDate?: string): Promise<void>
+  /** Remarks for one cheque, newest first. */
+  listRemarks(chequeId: string): Promise<Remark[]>
 }
 
 export function addDays(iso: string, days: number): string {
@@ -119,6 +184,7 @@ interface Row {
   maturity_date: string
   status: ChequeStatus
   note: string | null
+  next_action_date: string | null
   version: number
   agent_id: string | null
   banks: { name: string } | null
@@ -131,13 +197,27 @@ function fail(error: { message: string }): never {
   throw new Error(m)
 }
 
+/** Maps a ChequePatch to the snake_case jsonb the update_cheque RPC expects (only keys that are set). */
+export function chequePatchToJson(p: ChequePatch): Record<string, unknown> {
+  const o: Record<string, unknown> = {}
+  if (p.chequeNo !== undefined) o.cheque_no = p.chequeNo
+  if (p.amountPaisa !== undefined) o.amount_paisa = p.amountPaisa.toString()
+  if (p.bankId !== undefined) o.bank_id = p.bankId
+  if (p.partyId !== undefined) o.party_id = p.partyId
+  if (p.receivedDate !== undefined) o.received_date = p.receivedDate
+  if (p.maturityDate !== undefined) o.maturity_date = p.maturityDate
+  if (p.agentId !== undefined) o.agent_id = p.agentId
+  if (p.note !== undefined) o.note = p.note
+  return o
+}
+
 export const supabaseRepo: ChequeRepo = {
   async listCheques() {
     const sb = getSupabase()
     const { data, error } = await sb
       .from('cheques')
       .select(
-        'id, cheque_no_norm, amount_paisa, received_date, maturity_date, status, note, version, agent_id, banks(name), parties(name)',
+        'id, cheque_no_norm, amount_paisa, received_date, maturity_date, status, note, next_action_date, version, agent_id, banks(name), parties(name)',
       )
       .order('maturity_date', { ascending: true })
     if (error) fail(error)
@@ -158,7 +238,9 @@ export const supabaseRepo: ChequeRepo = {
       maturityDate: r.maturity_date,
       status: r.status,
       agent: r.agent_id ? (names.get(r.agent_id) ?? undefined) : undefined,
+      agentId: r.agent_id ?? undefined,
       note: r.note ?? undefined,
+      nextActionDate: r.next_action_date ?? undefined,
       version: r.version,
     }))
   },
@@ -197,6 +279,55 @@ export const supabaseRepo: ChequeRepo = {
       new_cheque_no: newChequeNo,
       note: note ?? null,
     })
+    if (error) fail(error)
+  },
+
+  async updateCheque(id, version, patch) {
+    const { data, error } = await getSupabase().rpc('update_cheque', {
+      cheque_id: id,
+      expected_version: version,
+      patch: chequePatchToJson(patch),
+    })
+    if (error) fail(error)
+    return Number(data)
+  },
+
+  async updateBank(id, patch) {
+    const { error } = await getSupabase().rpc('update_bank', { bank_id: id, patch })
+    if (error) fail(error)
+  },
+
+  async updateParty(id, patch) {
+    const { error } = await getSupabase().rpc('update_party', { party_id: id, patch })
+    if (error) fail(error)
+  },
+
+  async createAgent(input) {
+    const { data, error } = await getSupabase().functions.invoke('admin-create-agent', {
+      body: {
+        email: input.email,
+        password: input.password,
+        full_name: input.fullName,
+        role: input.role ?? 'agent',
+      },
+    })
+    if (error) {
+      // FunctionsHttpError carries the Response in .context; surface the function's own message.
+      const ctx = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context
+      let msg = error.message
+      try {
+        const body = await ctx?.json?.()
+        if (body?.error) msg = body.error
+      } catch {
+        /* keep the generic message */
+      }
+      throw new Error(msg)
+    }
+    return data as CreatedAgent
+  },
+
+  async setAgentActive(id, active) {
+    const { error } = await getSupabase().rpc('set_profile_active', { profile_id: id, active })
     if (error) fail(error)
   },
 
@@ -281,15 +412,57 @@ export const supabaseRepo: ChequeRepo = {
     return BigInt((data as { balance_paisa: number | string } | null)?.balance_paisa ?? 0)
   },
 
-  async listAgents() {
-    const { data, error } = await getSupabase()
-      .from('profiles')
-      .select('id, full_name')
-      .eq('role', 'agent')
-      .eq('active', true)
-      .order('full_name')
+  async addRemark(chequeId, remark, nextActionDate) {
+    const { error } = await getSupabase().rpc('add_remark', {
+      cheque_id: chequeId,
+      remark,
+      next_action_date: nextActionDate ?? null,
+    })
     if (error) fail(error)
-    return ((data ?? []) as { id: string; full_name: string }[]).map((p) => ({ id: p.id, name: p.full_name }))
+  },
+
+  async listRemarks(chequeId) {
+    const sb = getSupabase()
+    const { data, error } = await sb
+      .from('cheque_events')
+      .select('id, at, note, actor_id, payload')
+      .eq('cheque_id', chequeId)
+      .eq('payload->>kind', 'remark')
+      .order('at', { ascending: false })
+    if (error) fail(error)
+    const rows = (data ?? []) as {
+      id: number | string
+      at: string
+      note: string | null
+      actor_id: string | null
+      payload: { next_action_date?: string | null } | null
+    }[]
+    const ids = Array.from(new Set(rows.map((r) => r.actor_id).filter((x): x is string => !!x)))
+    const names = new Map<string, string>()
+    if (ids.length) {
+      // RLS: agents only see their own profile; other authors show as "Office".
+      const { data: ps } = await sb.from('profiles').select('id, full_name').in('id', ids)
+      for (const p of (ps ?? []) as { id: string; full_name: string }[]) names.set(p.id, p.full_name)
+    }
+    return rows.map((r) => ({
+      id: String(r.id),
+      at: r.at,
+      note: r.note ?? '',
+      author: r.actor_id ? (names.get(r.actor_id) ?? 'Office') : undefined,
+      nextActionDate: r.payload?.next_action_date ?? undefined,
+    }))
+  },
+
+  async listAgents(includeInactive = false) {
+    let q = getSupabase().from('profiles').select('id, full_name, active').eq('role', 'agent').order('full_name')
+    if (!includeInactive) q = q.eq('active', true)
+    const { data, error } = await q
+    if (error) fail(error)
+    return ((data ?? []) as { id: string; full_name: string; active: boolean | null }[]).map((p) => ({
+      id: p.id,
+      name: p.full_name,
+      active: p.active ?? true,
+    }))
   },
 }
 
@@ -305,7 +478,7 @@ export const addCheque = (i: NewCheque) => active.addCheque(i)
 export const transitionCheque = (id: string, to: ChequeStatus, version: number) =>
   active.transitionCheque(id, to, version)
 export const listBanks = (includeInactive?: boolean) => active.listBanks(includeInactive)
-export const listAgents = () => active.listAgents()
+export const listAgents = (includeInactive?: boolean) => active.listAgents(includeInactive)
 export const listParties = () => active.listParties()
 export const addBank = (i: NewBank) => active.addBank(i)
 export const setBankActive = (id: string, a: boolean) => active.setBankActive(id, a)
@@ -315,3 +488,12 @@ export const recordReceipt = (i: NewReceipt) => active.recordReceipt(i)
 export const getBalance = (id: string) => active.getBalance(id)
 export const replaceCheque = (id: string, version: number, newChequeNo: string, note?: string) =>
   active.replaceCheque(id, version, newChequeNo, note)
+export const updateCheque = (id: string, version: number, patch: ChequePatch) =>
+  active.updateCheque(id, version, patch)
+export const updateBank = (id: string, patch: BankPatch) => active.updateBank(id, patch)
+export const updateParty = (id: string, patch: PartyPatch) => active.updateParty(id, patch)
+export const createAgent = (i: NewAgent) => active.createAgent(i)
+export const setAgentActive = (id: string, a: boolean) => active.setAgentActive(id, a)
+export const addRemark = (chequeId: string, remark: string, nextActionDate?: string) =>
+  active.addRemark(chequeId, remark, nextActionDate)
+export const listRemarks = (chequeId: string) => active.listRemarks(chequeId)

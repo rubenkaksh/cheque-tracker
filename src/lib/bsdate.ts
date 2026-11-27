@@ -29,6 +29,13 @@ const BS_MONTH_KEYS = [
   'Chaitra',
 ] as const
 
+/** English display names of the 12 BS months, Baisakh first. */
+export const BS_MONTH_NAMES: readonly string[] = BS_MONTH_KEYS
+
+/** First and last BS year supported by the converter. */
+export const BS_MIN_YEAR = 2000
+export const BS_MAX_YEAR = 2090
+
 /** Kathmandu is UTC+05:45, no DST. */
 const KTM_OFFSET_MS = 5 * 60 * 60 * 1000 + 45 * 60 * 1000
 
@@ -47,6 +54,11 @@ function daysInBsMonth(year: number, month: number): number | undefined {
   const yearConfig = dateConfigMap[String(year)]
   if (yearConfig === undefined) return undefined
   return yearConfig[BS_MONTH_KEYS[month - 1]]
+}
+
+/** Days in the given BS month (29-32), or undefined when unsupported. */
+export function bsMonthDays(year: number, month: number): number | undefined {
+  return daysInBsMonth(year, month)
 }
 
 /**
@@ -135,4 +147,21 @@ export function formatBs(bs: BsDate): string {
 export function todayKathmandu(now: Date = new Date()): string {
   const ktm = new Date(now.getTime() + KTM_OFFSET_MS)
   return `${pad(ktm.getUTCFullYear(), 4)}-${pad(ktm.getUTCMonth() + 1, 2)}-${pad(ktm.getUTCDate(), 2)}`
+}
+
+/**
+ * Primary display of a stored AD date: BS, e.g. `2083-08-09 BS`.
+ * Falls back to `BS n/a` when the date is malformed or outside BS 2000-2090.
+ */
+export function formatAdAsBs(adIso: string): string {
+  try {
+    return `${formatBs(adToBs(adIso))} BS`
+  } catch {
+    return 'BS n/a'
+  }
+}
+
+/** Secondary display of a stored AD date, e.g. `AD 2026-11-25`. */
+export function formatBsAd(adIso: string): string {
+  return `AD ${adIso}`
 }

@@ -1,18 +1,15 @@
 import { useState } from 'react'
 import { Button, Dropdown, Tag, message } from 'antd'
-import { adToBs, formatBs } from '../lib/bsdate'
+import { formatAdAsBs, formatBsAd, todayKathmandu } from '../lib/bsdate'
 import { formatNpr } from '../lib/money'
 import { transitionCheque, type Cheque } from '../data/chequeRepo'
 import RecordCashModal from './RecordCashModal'
-import { colorFor, HOLD_STATUS, labelFor, type ChequeStatus } from '../data/transitions'
-
-function bsOf(iso: string): string {
-  try {
-    return formatBs(adToBs(iso))
-  } catch {
-    return '-'
-  }
-}
+import { colorFor, HOLD_STATUS, isMatured, isTerminal, labelFor, type ChequeStatus } from '../data/transitions'
+import RemarksPanel from './RemarksPanel'
+import AssignAgentPanel from './AssignAgentPanel'
+import { useAuth } from '../lib/auth'
+import ChequeForm from './ChequeForm'
+import Popup from './Popup'
 
 interface Props {
   cheque: Cheque
@@ -26,7 +23,17 @@ interface Props {
 const RECEIPT_ONLY: ChequeStatus[] = ['partial_cash', 'closed_full_cash']
 
 export default function ChequeWidget({ cheque, overdue, allowedTo, onChanged }: Props) {
+  const { role } = useAuth()
   const [cashOpen, setCashOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [remarksOpen, setRemarksOpen] = useState(false)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const today = todayKathmandu()
+  const matured = isMatured(cheque.status, cheque.maturityDate, today)
+  const recovery = cheque.status === 'bounced' || cheque.status === 'partial_cash'
+  const canAssign = role === 'admin' && recovery
+  const followUpDue = !isTerminal(cheque.status) && !!cheque.nextActionDate && cheque.nextActionDate <= today
+  const canEdit = role === 'admin' && !isTerminal(cheque.status)
   const receiptStage = cheque.status === 'bounced' || cheque.status === 'partial_cash'
   const moves = receiptStage ? allowedTo.filter((s) => !RECEIPT_ONLY.includes(s)) : allowedTo
   const canRecordCash = receiptStage && allowedTo.some((s) => RECEIPT_ONLY.includes(s))
@@ -60,12 +67,17 @@ export default function ChequeWidget({ cheque, overdue, allowedTo, onChanged }: 
         <div>
           <div className="font-display text-sm font-bold text-green">{cheque.bank}</div>
           {overdue && <span className="text-xs font-semibold text-red">OVERDUE</span>}
+          {matured && (
+            <Tag color="green" className="!ml-1" data-testid="matured-tag">
+              Matured: deposit or hand to agent
+            </Tag>
+          )}
         </div>
         <div className="text-right">
           <div className="rounded border border-muted/40 px-2 py-0.5 font-mono text-xs">
-            {cheque.maturityDate}
+            {formatAdAsBs(cheque.maturityDate)}
           </div>
-          <div className="mt-0.5 font-mono text-[11px] text-muted">BS {bsOf(cheque.maturityDate)}</div>
+          <div className="mt-0.5 font-mono text-[11px] text-muted">{formatBsAd(cheque.maturityDate)}</div>
         </div>
       </div>
 
@@ -75,7 +87,9 @@ export default function ChequeWidget({ cheque, overdue, allowedTo, onChanged }: 
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2 pl-1">
-        <div className="text-xs text-muted">{cheque.agent ? `Agent: ${cheque.agent}` : ' '}</div>
+        <div className="text-xs text-muted" data-testid="custody">
+          {cheque.agent ? `Agent: ${cheque.agent}` : recovery ? 'On hold at office (no agent)' : ' '}
+        </div>
         <div className="rounded border-2 border-ink/60 px-2 py-1 font-mono text-base font-bold">
           {formatNpr(Number(cheque.amountPaisa))}
         </div>
@@ -90,8 +104,30 @@ export default function ChequeWidget({ cheque, overdue, allowedTo, onChanged }: 
         </Tag>
       </div>
 
-      {(moves.length > 0 || canRecordCash) && (
-        <div className="mt-3 flex gap-2 pl-1">
+      {cheque.nextActionDate && !isTerminal(cheque.status) && (
+        <div
+          data-testid="follow-up"
+          className={`mt-2 pl-1 text-xs ${followUpDue ? 'font-semibold text-red' : 'text-muted'}`}
+        >
+          Follow up: {formatAdAsBs(cheque.nextActionDate)}
+          {followUpDue && ' (due)'}
+        </div>
+      )}
+
+        <div className="mt-3 flex flex-wrap gap-2 pl-1">
+          <Button size="small" onClick={() => setRemarksOpen(true)}>
+            Remarks
+          </Button>
+          {canAssign && (
+            <Button size="small" onClick={() => setAssignOpen(true)}>
+              {cheque.agentId ? 'Change agent' : 'Hand to agent'}
+            </Button>
+          )}
+          {canEdit && (
+            <Button size="small" onClick={() => setEditOpen(true)}>
+              Edit
+            </Button>
+          )}
           {canRecordCash && (
             <Button size="small" type="primary" onClick={() => setCashOpen(true)}>
               Record cash
@@ -116,6 +152,32 @@ export default function ChequeWidget({ cheque, overdue, allowedTo, onChanged }: 
           </Dropdown>
           )}
         </div>
+      <Popup title="Remarks and follow-up" open={remarksOpen} onClose={() => setRemarksOpen(false)}>
+        <RemarksPanel cheque={cheque} onChanged={onChanged} />
+      </Popup>
+      {canAssign && (
+        <Popup title="Bounced cheque: hold or agent" open={assignOpen} onClose={() => setAssignOpen(false)}>
+          <AssignAgentPanel
+            cheque={cheque}
+            onDone={() => {
+              setAssignOpen(false)
+              onChanged()
+            }}
+          />
+        </Popup>
+      )}
+      {canEdit && (
+        <Popup title="Edit cheque" open={editOpen} onClose={() => setEditOpen(false)}>
+          <ChequeForm
+            embedded
+            cheque={cheque}
+            onCancel={() => setEditOpen(false)}
+            onAdded={() => {
+              setEditOpen(false)
+              onChanged()
+            }}
+          />
+        </Popup>
       )}
       {canRecordCash && (
         <RecordCashModal

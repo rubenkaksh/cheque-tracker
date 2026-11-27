@@ -10,6 +10,7 @@ import { AuthContext } from '../src/lib/auth'
 import { addDays } from '../src/data/chequeRepo'
 import { todayKathmandu } from '../src/lib/bsdate'
 import { makeFakeRepo } from './fakeRepo'
+import { openOption, pickAd } from './bsPick'
 
 const h = vi.hoisted(() => ({ role: 'agent' as 'admin' | 'agent' }))
 
@@ -58,12 +59,15 @@ describe('role-aware dashboard actions', () => {
     setRepo(repo)
   })
 
-  it('agent gets no admin moves on a with_agent cheque', async () => {
+  it('agent on own matured with_agent cheque can only deposit (withdraw at bank/SACCOS)', async () => {
     as('agent', <Dashboard />)
     const card = await cardFor('Test Mart')
     expect(within(card).getByText('With agent')).toBeInTheDocument()
+    expect(within(card).getByTestId('matured-tag')).toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: 'Hold' })).not.toBeInTheDocument()
-    expect(within(card).queryByRole('button', { name: 'Move status' })).not.toBeInTheDocument()
+    await userEvent.click(within(card).getByRole('button', { name: 'Move status' }))
+    const items = await screen.findAllByRole('menuitem')
+    expect(items.map((i) => i.textContent)).toEqual(['Deposited'])
   })
 
   it('agent sees Record cash (not Move status) on a bounced cheque', async () => {
@@ -128,8 +132,8 @@ describe('stale-date warning', () => {
   it('warns (non-blocking) when maturity is more than 6 months before the received date', async () => {
     setRepo(makeFakeRepo())
     render(<ChequeForm onAdded={() => {}} />)
-    const m = await screen.findByLabelText('Maturity date')
-    await userEvent.type(m, `${dayjs(addDays(todayKathmandu(), -300)).format('YYYY-MM-DD')}{Enter}`)
+    await screen.findByRole('combobox', { name: 'Maturity date year' })
+    await pickAd('Maturity date', dayjs(addDays(todayKathmandu(), -300)).format('YYYY-MM-DD'))
     expect(await screen.findByText(/more than 6 months before the received date/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add cheque' })).toBeEnabled()
   })
@@ -137,9 +141,30 @@ describe('stale-date warning', () => {
   it('does not warn for a recent maturity date', async () => {
     setRepo(makeFakeRepo())
     render(<ChequeForm onAdded={() => {}} />)
-    const m = await screen.findByLabelText('Maturity date')
-    await userEvent.type(m, `${addDays(todayKathmandu(), 10)}{Enter}`)
-    await waitFor(() => expect(m).toHaveValue(addDays(todayKathmandu(), 10)))
+    await pickAd('Maturity date', addDays(todayKathmandu(), 10))
+    expect(await screen.findByText(`AD ${addDays(todayKathmandu(), 10)}`)).toBeInTheDocument()
     expect(screen.queryByText(/more than 6 months before/)).not.toBeInTheDocument()
+  })
+})
+
+describe('ChequeForm BS date entry', () => {
+  it('submits the AD dates for a BS date picked in the form', async () => {
+    const repo = makeFakeRepo()
+    setRepo(repo)
+    const spy = vi.spyOn(repo, 'addCheque')
+    as('agent', <ChequeForm onAdded={() => {}} />)
+    const maturityAd = addDays(todayKathmandu(), 10)
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Bank' }))
+    await userEvent.click(await openOption('Test Bank Himalaya'))
+    await userEvent.type(document.querySelector('input#party') as HTMLInputElement, 'Test Party BS')
+    await userEvent.type(screen.getByPlaceholderText('e.g. 100-009'), 'BS-001')
+    await userEvent.type(screen.getByLabelText('Amount (NPR)'), '1500')
+    await pickAd('Maturity date', maturityAd)
+    await userEvent.click(screen.getByRole('button', { name: 'Add cheque' }))
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1))
+    expect(spy.mock.calls[0][0]).toMatchObject({
+      receivedDate: todayKathmandu(),
+      maturityDate: maturityAd,
+    })
   })
 })

@@ -4,10 +4,11 @@ import Dashboard from './features/Dashboard'
 import ChequeForm from './features/ChequeForm'
 import BanksPage from './features/BanksPage'
 import PartiesPage from './features/PartiesPage'
+import AgentsPage from './features/AgentsPage'
 import LoginPage from './features/LoginPage'
 import { AuthProvider, useAuth } from './lib/auth'
 
-type Tab = 'dashboard' | 'new' | 'banks' | 'parties'
+type Tab = 'dashboard' | 'new' | 'banks' | 'parties' | 'agents'
 
 function Shell() {
   const { session, role, loading, signOut } = useAuth()
@@ -22,6 +23,7 @@ function Shell() {
           { key: 'new', label: 'New cheque' },
           { key: 'banks', label: 'Banks' },
           { key: 'parties', label: 'Parties' },
+          { key: 'agents', label: 'Agents' },
         ]
       : []),
   ]
@@ -29,14 +31,16 @@ function Shell() {
 
   return (
     <Layout className="min-h-screen">
-      <Layout.Header className="flex items-center gap-4 !px-3 sm:!px-6">
+      <Layout.Header className="flex !h-auto max-sm:!leading-[52px] flex-wrap items-center gap-x-4 !px-3 sm:flex-nowrap sm:!px-6">
         <span className="whitespace-nowrap font-display font-bold text-white">Collection Desk</span>
         <Menu
           theme="dark"
           mode="horizontal"
           selectedKeys={[tab]}
           onClick={({ key }) => setTab(key as Tab)}
-          className="min-w-0 flex-1"
+          // Phone: own full-width row that scrolls sideways; never folds tabs into a hidden "..." menu.
+          disabledOverflow
+          className="order-last -mx-3 min-w-0 basis-[calc(100%+1.5rem)] overflow-x-auto whitespace-nowrap max-sm:[&_.ant-menu-item]:!px-2 max-sm:[&_.ant-menu-item]:!leading-[44px] sm:order-none sm:mx-0 sm:flex-1 sm:basis-auto"
           items={items}
         />
         <Dropdown
@@ -46,7 +50,7 @@ function Shell() {
             onClick: () => void signOut(),
           }}
         >
-          <Button type="text" className="!text-white" data-testid="user-menu">
+          <Button type="text" className="ml-auto max-w-[60vw] truncate !text-white sm:max-w-none" data-testid="user-menu">
             {email} ({role ?? 'no role'})
           </Button>
         </Dropdown>
@@ -58,6 +62,8 @@ function Shell() {
           <BanksPage />
         ) : tab === 'parties' && isAdmin ? (
           <PartiesPage />
+        ) : tab === 'agents' && isAdmin ? (
+          <AgentsPage />
         ) : (
           <Dashboard />
         )}
