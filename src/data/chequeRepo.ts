@@ -101,6 +101,8 @@ export interface ChequeRepo {
   recordReceipt(input: NewReceipt): Promise<void>
   /** Outstanding balance in paisa from the cheque_balance view. */
   getBalance(chequeId: string): Promise<bigint>
+  /** Calls the replace_cheque RPC (admin only): old cheque -> replaced, new cheque for the balance. */
+  replaceCheque(id: string, version: number, newChequeNo: string, note?: string): Promise<void>
 }
 
 export function addDays(iso: string, days: number): string {
@@ -184,6 +186,16 @@ export const supabaseRepo: ChequeRepo = {
       cheque_id: id,
       to_status: toStatus,
       expected_version: version,
+    })
+    if (error) fail(error)
+  },
+
+  async replaceCheque(id, version, newChequeNo, note) {
+    const { error } = await getSupabase().rpc('replace_cheque', {
+      cheque_id: id,
+      expected_version: version,
+      new_cheque_no: newChequeNo,
+      note: note ?? null,
     })
     if (error) fail(error)
   },
@@ -301,3 +313,5 @@ export const addParty = (i: NewParty) => active.addParty(i)
 export const listAllowedTransitions = () => active.listAllowedTransitions()
 export const recordReceipt = (i: NewReceipt) => active.recordReceipt(i)
 export const getBalance = (id: string) => active.getBalance(id)
+export const replaceCheque = (id: string, version: number, newChequeNo: string, note?: string) =>
+  active.replaceCheque(id, version, newChequeNo, note)

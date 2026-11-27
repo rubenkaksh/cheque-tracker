@@ -9,7 +9,7 @@ test('admin adds a bank and party, then a cheque appears on the dashboard', asyn
   const bank = `Test Bank E2E ${id}`
   const party = `Test Party E2E ${id}`
 
-  await page.goto('/')
+  await page.goto('./')
   await page.getByLabel('Email').fill('admin.dev@test.invalid')
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()

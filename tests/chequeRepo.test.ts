@@ -38,6 +38,14 @@ describe('supabaseRepo error mapping', () => {
     await supabaseRepo.transitionCheque('id', 'pdc_hold', 7)
     expect(rpc).toHaveBeenCalledWith('transition_cheque', { cheque_id: 'id', to_status: 'pdc_hold', expected_version: 7 })
   })
+
+  it('calls replace_cheque with version and new cheque number', async () => {
+    rpc.mockResolvedValueOnce({ data: 'CHQ-2083-0002', error: null })
+    await supabaseRepo.replaceCheque('id', 3, 'NEW1234', 'swap')
+    expect(rpc).toHaveBeenCalledWith('replace_cheque', {
+      cheque_id: 'id', expected_version: 3, new_cheque_no: 'NEW1234', note: 'swap',
+    })
+  })
 })
 
 describe('fake repo', () => {

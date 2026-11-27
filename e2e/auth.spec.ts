@@ -6,7 +6,7 @@ const password = process.env.E2E_PASSWORD ?? ''
 
 test('admin logs in, sees dashboard and email, logs out', async ({ page }) => {
   test.skip(!password, 'E2E_PASSWORD not set')
-  await page.goto('/')
+  await page.goto('./')
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
@@ -20,7 +20,7 @@ test('admin logs in, sees dashboard and email, logs out', async ({ page }) => {
 
 test('agent sees dashboard only', async ({ page }) => {
   test.skip(!password, 'E2E_PASSWORD not set')
-  await page.goto('/')
+  await page.goto('./')
   await page.getByLabel('Email').fill('agent.dev@test.invalid')
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()

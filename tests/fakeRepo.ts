@@ -92,6 +92,19 @@ export function makeFakeRepo(): ChequeRepo {
       c.status = to
       c.version += 1
     },
+    async replaceCheque(id, version, newChequeNo) {
+      const c = rows.find((r) => r.id === id)
+      if (!c) throw new Error('cheque not found')
+      if (c.version !== version) throw new Error('This cheque was changed by someone else, reload')
+      if (!['bounced', 'partial_cash', 'stale'].includes(c.status)) throw new Error(`Illegal transition ${c.status} -> replaced`)
+      const bal = await this.getBalance(id)
+      c.status = 'replaced'
+      c.version += 1
+      rows.push({
+        ...c, id: `fake-${rows.length + 1}`, chequeNoNorm: newChequeNo.replace(/[\s-]/g, '').toUpperCase(),
+        amountPaisa: bal, status: 'in_office', version: 1,
+      })
+    },
     async listBanks(includeInactive = false) {
       return banks.filter((b) => includeInactive || b.active).map((b) => ({ ...b }))
     },

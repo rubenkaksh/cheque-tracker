@@ -9,8 +9,8 @@ const env = Object.fromEntries(
     .filter((l) => l.includes('='))
     .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()]),
 )
-const API = env.VITE_SUPABASE_URL
-const KEY = env.VITE_SUPABASE_ANON_KEY
+const API = process.env.VITE_SUPABASE_URL ?? env.VITE_SUPABASE_URL
+const KEY = process.env.VITE_SUPABASE_ANON_KEY ?? env.VITE_SUPABASE_ANON_KEY
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
 
 async function token(email: string): Promise<string> {
@@ -33,7 +33,7 @@ async function call(tok: string, path: string, init: RequestInit = {}) {
 }
 
 async function login(page: Page, email: string) {
-  await page.goto('/')
+  await page.goto('./')
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()

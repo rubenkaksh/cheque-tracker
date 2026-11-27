@@ -71,7 +71,6 @@ export const TERMINAL_STATUSES: ChequeStatus[] = [
   'cleared',
   'closed_full_cash',
   'replaced',
-  'bad_debt',
   'party_flagged',
 ]
 
