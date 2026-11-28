@@ -165,3 +165,18 @@ export function formatAdAsBs(adIso: string): string {
 export function formatBsAd(adIso: string): string {
   return `AD ${adIso}`
 }
+
+const BS_MONTHS = [
+  'Baisakh', 'Jestha', 'Asar', 'Shrawan', 'Bhadra', 'Asoj',
+  'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra',
+]
+
+/** Long BS display of a stored AD date, e.g. `9 Mangsir 2083`. Falls back to `BS n/a`. */
+export function formatAdAsBsLong(adIso: string): string {
+  try {
+    const bs = adToBs(adIso)
+    return `${bs.day} ${BS_MONTHS[bs.month - 1]} ${bs.year}`
+  } catch {
+    return 'BS n/a'
+  }
+}

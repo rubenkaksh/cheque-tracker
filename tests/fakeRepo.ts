@@ -25,6 +25,7 @@ export function makeFakeRepo(role: 'admin' | 'agent' = 'admin'): ChequeRepo {
     maturityDate: addDays(today, matOffset),
     status,
     agent,
+    agentId: agent ? `agent-${agent.endsWith('A') ? 1 : 2}` : undefined,
     version: 1,
   })
   const rows: Cheque[] = [

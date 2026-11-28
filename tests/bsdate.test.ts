@@ -90,3 +90,13 @@ describe('formatAdAsBs / formatBsAd', () => {
     expect(bsMonthDays(2083, 8)).toBe(29)
   })
 })
+
+import { formatAdAsBsLong } from '../src/lib/bsdate'
+describe('formatAdAsBsLong', () => {
+  it('spells the BS month', () => {
+    expect(formatAdAsBsLong('2026-11-25')).toMatch(/^\d{1,2} Mangsir 2083$/)
+  })
+  it('falls back on bad input', () => {
+    expect(formatAdAsBsLong('nope')).toBe('BS n/a')
+  })
+})
