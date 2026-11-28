@@ -1,4 +1,4 @@
-/* fonts must be self-hosted (no Google @import), see P2-7 */
+/* fonts must be self-hosted (no Google @import), see P2-7: loaded via @fontsource in main.tsx */
 
 @theme {
   --color-ink: #142e27;

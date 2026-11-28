@@ -11,6 +11,8 @@ export default defineConfig(({ mode }) => ({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // precache the self-hosted Latin font files so the app keeps its fonts offline
+      workbox: { globPatterns: ['**/*.{js,css,html}', '**/*-latin-[0-9]*-normal-*.woff2'] },
       manifest: {
         name: 'Collection Desk',
         short_name: 'Collection Desk',

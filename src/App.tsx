@@ -74,7 +74,16 @@ function Shell() {
 
 export default function App() {
   return (
-    <ConfigProvider theme={{ token: { colorPrimary: '#174d3c' } }}>
+    <ConfigProvider
+      theme={{
+        token: { colorPrimary: '#174d3c', fontFamily: "'DM Sans', system-ui, sans-serif" },
+        components: {
+          // theme.css --color-sidebar / --color-green, instead of antd's default navy #001529
+          Layout: { headerBg: '#123c32' },
+          Menu: { darkItemBg: '#123c32', darkItemSelectedBg: '#174d3c', darkPopupBg: '#123c32' },
+        },
+      }}
+    >
       <AuthProvider>
         <Shell />
       </AuthProvider>
